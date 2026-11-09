@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "description": "OmniAsk - 一次提问，多模型回答，交叉验证，生成最佳答案",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "scripts": {
     "dev": "vite",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",

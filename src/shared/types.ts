@@ -158,3 +158,9 @@ export interface AppSettings {
   judge: JudgeConfig;
   judgePrompt: string;
 }
+
+/** 未提交的问题草稿，刷新或关闭 Popup 后保留。 */
+export interface DraftState {
+  question: string;
+  selectedSiteIds: string[];
+}

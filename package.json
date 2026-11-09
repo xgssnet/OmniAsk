@@ -11,6 +11,8 @@
     "icons": "node scripts/generate-icons.mjs",
     "build": "npm run typecheck && npm run icons && npm run build:pages && npm run build:background && npm run build:content && npm run verify",
     "verify": "node scripts/verify-dist.mjs",
+    "test": "vitest run",
+    "package": "npm run build && node scripts/package-extension.mjs",
     "build:pages": "vite build --mode pages",
     "build:background": "vite build --mode background",
     "build:content": "vite build --mode content",
@@ -23,6 +25,9 @@
     "lucide-react": "^0.454.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^9.0.1",
+    "rehype-highlight": "^7.0.1",
+    "remark-gfm": "^4.0.0",
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
@@ -32,9 +37,11 @@
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "jsdom": "^25.0.1",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
-    "vite": "^6.0.1"
+    "vite": "^6.0.1",
+    "vitest": "^3.0.0"
   }
 }

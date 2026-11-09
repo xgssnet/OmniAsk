@@ -18,6 +18,7 @@ export interface ExtensionManifest {
   background: { service_worker: string };
   permissions: string[];
   host_permissions: string[];
+  optional_host_permissions: string[];
   content_scripts: Array<{
     matches: string[];
     js: string[];
@@ -56,6 +57,7 @@ export function createManifest(version: string): ExtensionManifest {
     background: { service_worker: 'background.js' },
     permissions: ['storage', 'tabs', 'sidePanel', 'scripting'],
     host_permissions: BUILTIN_MATCH_PATTERNS,
+    optional_host_permissions: ['https://*/*', 'http://*/*'],
     content_scripts: [
       {
         matches: BUILTIN_MATCH_PATTERNS,

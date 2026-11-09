@@ -6,8 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { DEFAULT_SETTINGS, STORAGE_KEYS } from '@/shared/settings';
-import { readStorage, writeStorage } from '@/shared/storage';
+import { useAppState } from '@/state/AppStateProvider';
 import type { ThemeMode } from '@/shared/types';
 
 interface ThemeContextValue {
@@ -23,15 +22,13 @@ function prefersDark(): boolean {
   return globalThis.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false;
 }
 
+/** 主题值由 AppStateProvider 统一持久化，避免两个模块写同一个 storage key 互相覆盖。 */
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeMode>(DEFAULT_SETTINGS.theme);
+  const { settings, updateSettings } = useAppState();
+  const theme = settings.theme;
   const [systemDark, setSystemDark] = useState<boolean>(prefersDark);
 
   useEffect(() => {
-    void readStorage(STORAGE_KEYS.settings, DEFAULT_SETTINGS).then((settings) => {
-      setThemeState(settings.theme ?? DEFAULT_SETTINGS.theme);
-    });
-
     const query = globalThis.matchMedia?.('(prefers-color-scheme: dark)');
     if (!query) return;
     const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches);
@@ -47,21 +44,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.documentElement.style.colorScheme = resolved;
   }, [resolved]);
 
-  const setTheme = (next: ThemeMode) => {
-    setThemeState(next);
-    void readStorage(STORAGE_KEYS.settings, DEFAULT_SETTINGS).then((settings) =>
-      writeStorage(STORAGE_KEYS.settings, { ...settings, theme: next }),
-    );
-  };
-
   const value = useMemo<ThemeContextValue>(
     () => ({
       theme,
       resolved,
-      setTheme,
-      toggle: () => setTheme(resolved === 'dark' ? 'light' : 'dark'),
+      setTheme: (next) => updateSettings({ theme: next }),
+      toggle: () => updateSettings({ theme: resolved === 'dark' ? 'light' : 'dark' }),
     }),
-    [theme, resolved],
+    [theme, resolved, updateSettings],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

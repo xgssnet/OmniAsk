@@ -1,10 +1,12 @@
 import { JUDGE_SYSTEM_PROMPT } from './prompts';
-import type { AppSettings } from './types';
+import type { AppSettings, DraftState } from './types';
 
 export const STORAGE_KEYS = {
   settings: 'omniask:settings',
   sites: 'omniask:sites',
   tasks: 'omniask:tasks',
+  activeTask: 'omniask:activetask',
+  draft: 'omniask:draft',
 } as const;
 
 export const APP_VERSION = '0.1.0';
@@ -25,4 +27,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     maxTokens: 4096,
   },
   judgePrompt: JUDGE_SYSTEM_PROMPT,
+};
+
+export const DEFAULT_DRAFT: DraftState = {
+  question: '',
+  selectedSiteIds: DEFAULT_SETTINGS.defaultSiteIds,
 };

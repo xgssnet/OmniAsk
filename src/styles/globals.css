@@ -88,3 +88,128 @@
     background: transparent;
   }
 }
+
+/* Markdown 回答渲染（Tailwind preflight 重置了标题/列表样式，需显式恢复） */
+.omni-markdown {
+  @apply break-words text-[13px] leading-7 text-foreground;
+}
+.omni-markdown > *:first-child {
+  @apply mt-0;
+}
+.omni-markdown > *:last-child {
+  @apply mb-0;
+}
+.omni-markdown h1 {
+  @apply mb-2 mt-4 border-b pb-1 text-base font-semibold;
+}
+.omni-markdown h2 {
+  @apply mb-2 mt-4 text-sm font-semibold;
+}
+.omni-markdown h3 {
+  @apply mb-1.5 mt-3 text-[13px] font-semibold;
+}
+.omni-markdown p {
+  @apply my-2;
+}
+.omni-markdown ul {
+  @apply my-2 list-disc space-y-1 pl-5;
+}
+.omni-markdown ol {
+  @apply my-2 list-decimal space-y-1 pl-5;
+}
+.omni-markdown li {
+  @apply leading-6;
+}
+.omni-markdown blockquote {
+  @apply my-3 border-l-2 border-primary/40 pl-3 text-muted-foreground;
+}
+.omni-markdown a {
+  @apply text-primary underline underline-offset-2;
+}
+.omni-markdown :not(pre) > code {
+  @apply rounded bg-muted px-1 py-0.5 font-mono text-[0.85em] text-foreground;
+}
+.omni-markdown pre code {
+  @apply bg-transparent p-0 text-inherit;
+}
+.omni-markdown pre .hljs {
+  background: transparent;
+  padding: 0;
+}
+.omni-markdown table {
+  @apply w-full border-collapse text-xs;
+}
+.omni-markdown th,
+.omni-markdown td {
+  @apply border px-2 py-1.5 text-left align-top;
+}
+.omni-markdown th {
+  @apply bg-muted font-semibold;
+}
+.omni-markdown hr {
+  @apply my-4 border-border;
+}
+.omni-markdown strong {
+  @apply font-semibold;
+}
+
+/* rehype-highlight 生成的 token 类（GitHub Dark 调色，静态打包避免运行时动态插入 CSS） */
+.hljs {
+  color: #c9d1d9;
+}
+.hljs-doctag,
+.hljs-keyword,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-variable.language_ {
+  color: #ff7b72;
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_ {
+  color: #d2a8ff;
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-literal,
+.hljs-meta,
+.hljs-number,
+.hljs-operator,
+.hljs-selector-attr,
+.hljs-selector-class,
+.hljs-selector-id,
+.hljs-variable {
+  color: #79c0ff;
+}
+.hljs-string,
+.hljs-meta .hljs-string,
+.hljs-regexp {
+  color: #a5d6ff;
+}
+.hljs-built_in,
+.hljs-symbol {
+  color: #ffa657;
+}
+.hljs-comment,
+.hljs-code,
+.hljs-formula {
+  color: #8b949e;
+}
+.hljs-name,
+.hljs-quote,
+.hljs-selector-pseudo,
+.hljs-selector-tag {
+  color: #7ee787;
+}
+.hljs-section,
+.hljs-bullet {
+  color: #79c0ff;
+  font-weight: 600;
+}
+.hljs-addition {
+  color: #aff5b4;
+}
+.hljs-deletion {
+  color: #ffdcd7;
+}

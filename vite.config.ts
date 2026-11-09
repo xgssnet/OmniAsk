@@ -34,6 +34,9 @@ function manifestPlugin(): Plugin {
 
 function scriptConfig(entry: string, fileName: string, name: string): UserConfig {
   return {
+    resolve: {
+      alias: { '@': fromRoot('src') },
+    },
     publicDir: false,
     build: {
       outDir: 'dist',

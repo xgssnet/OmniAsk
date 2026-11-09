@@ -13,11 +13,15 @@ import {
   Sun,
   type LucideIcon,
 } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useTheme } from '@/components/ThemeProvider';
+import { HistoryView } from '@/components/HistoryView';
+import { SitesView } from '@/components/SitesView';
+import { SettingsView } from '@/components/SettingsView';
+import { useTask } from '@/state/useTask';
 import { openWorkspace, pingServiceWorker } from '@/shared/messaging';
+import { VERIFICATION_LABELS } from '@/shared/types';
 import { cn } from '@/lib/utils';
 
 export type ShellVariant = 'compact' | 'standard' | 'full';
@@ -29,38 +33,13 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   stage: string;
-  description: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  {
-    id: 'ask',
-    label: '新建问题',
-    icon: MessageSquarePlus,
-    stage: 'P2',
-    description: '输入问题，选择模型，查看各模型回答与综合答案。',
-  },
-  {
-    id: 'history',
-    label: '历史记录',
-    icon: History,
-    stage: 'P7',
-    description: '本地保存问题、原始回答与综合分析结果，支持导入导出。',
-  },
-  {
-    id: 'sites',
-    label: '模型管理',
-    icon: Boxes,
-    stage: 'P3',
-    description: '管理内置与自定义 AI 网站、选择器规则与适配器。',
-  },
-  {
-    id: 'settings',
-    label: '设置',
-    icon: Settings,
-    stage: 'P7',
-    description: '裁决模型、提示词、并发数、主题与数据管理。',
-  },
+  { id: 'ask', label: '新建问题', icon: MessageSquarePlus, stage: 'P5' },
+  { id: 'history', label: '历史记录', icon: History, stage: 'P7' },
+  { id: 'sites', label: '模型管理', icon: Boxes, stage: 'P3' },
+  { id: 'settings', label: '设置', icon: Settings, stage: 'P7' },
 ];
 
 type RuntimeState = 'checking' | 'connected' | 'unavailable';
@@ -83,55 +62,64 @@ function RuntimeBadge({ state, version }: { state: RuntimeState; version: string
   );
 }
 
-function ComingSoonPanel({ item }: { item: NavItem }) {
-  const Icon = item.icon;
-  return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center py-16 text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <Icon className="h-6 w-6" />
-      </div>
-      <h2 className="text-lg font-semibold">{item.label}</h2>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
-      <Badge variant="outline" className="mt-5">
-        计划于 {item.stage} 阶段接入
-      </Badge>
-    </div>
-  );
-}
-
-const INSIGHTS = [
-  { title: '多模型观点', icon: ListChecks },
-  { title: '冲突分析', icon: GitCompare },
-  { title: '事实核查', icon: BadgeCheck },
-  { title: '最终结论', icon: Sparkles },
-];
-
 function InsightPanel() {
+  const { task } = useTask();
+  const analysis = task.analysis;
+  const blocks: Array<{ title: string; icon: LucideIcon; items: string[] }> = [
+    { title: '多模型观点', icon: ListChecks, items: analysis?.consensus ?? [] },
+    {
+      title: '冲突分析',
+      icon: GitCompare,
+      items: analysis?.conflicts.map((item) => item.resolution) ?? [],
+    },
+    {
+      title: '事实核查',
+      icon: BadgeCheck,
+      items:
+        analysis?.factChecks
+          .slice(0, 8)
+          .map((item) => `[${VERIFICATION_LABELS[item.level]}] ${item.claim}`) ?? [],
+    },
+    { title: '最终结论', icon: Sparkles, items: analysis?.coreConclusions ?? [] },
+  ];
+
   return (
     <aside className="scrollbar-thin hidden w-72 shrink-0 overflow-y-auto border-l bg-muted/20 p-4 xl:block">
       <div className="mb-4 flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-primary" />
         <h2 className="text-sm font-semibold">裁决洞察</h2>
+        {analysis && (
+          <span className="ml-auto text-[10px] text-muted-foreground">
+            可信度 {analysis.confidence === 'medium' ? '中' : '低'}
+          </span>
+        )}
       </div>
       <div className="space-y-3">
-        {INSIGHTS.map(({ title, icon: Icon }) => (
+        {blocks.map(({ title, icon: Icon, items }) => (
           <Card key={title} className="bg-card/60">
             <CardHeader className="pb-2">
               <CardTitle className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Icon className="h-3.5 w-3.5" />
                 {title}
+                <span className="ml-auto">{items.length}</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <CardDescription className="leading-5">
-                综合分析（P6）生成后在此展示。
-              </CardDescription>
+              {items.length > 0 ? (
+                <ul className="scrollbar-thin max-h-40 space-y-1 overflow-y-auto text-[11px] leading-5 text-muted-foreground">
+                  {items.map((item, index) => (
+                    <li key={index}>· {item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <CardDescription className="leading-5">综合分析后在此展示。</CardDescription>
+              )}
             </CardContent>
           </Card>
         ))}
       </div>
       <p className="mt-5 text-[11px] leading-5 text-muted-foreground">
-        事实核查不会编造来源；无法验证的结论会被明确标记为「尚未验证」。
+        事实核查不会编造来源；缺少证据的结论会被明确标记为「尚未验证」，结论不代表绝对正确。
       </p>
     </aside>
   );
@@ -211,7 +199,6 @@ export function AppShell({ variant, initialView = 'ask', children }: AppShellPro
                 >
                   <Icon className="h-4 w-4" />
                   <span className="flex-1">{item.label}</span>
-                  <span className="text-[10px] opacity-60">{item.stage}</span>
                 </button>
               );
             })}
@@ -239,7 +226,6 @@ export function AppShell({ variant, initialView = 'ask', children }: AppShellPro
               {variant === 'compact' ? 'OmniAsk' : '一次提问 · 多模型交叉验证'}
             </span>
           </div>
-
           <div className="ml-auto flex items-center gap-1.5">
             {variant !== 'compact' && <RuntimeBadge state={runtime} version={version} />}
             <Button variant="ghost" size="icon" onClick={toggle} title="切换主题" aria-label="切换主题">
@@ -259,12 +245,31 @@ export function AppShell({ variant, initialView = 'ask', children }: AppShellPro
           </div>
         </header>
 
+        {variant === 'standard' && (
+          <div className="scrollbar-thin flex shrink-0 gap-1 overflow-x-auto border-b px-2 py-1.5">
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => navigate(item.id)}
+                className={cn(
+                  'shrink-0 rounded-md px-2 py-1 text-[11px] transition-colors',
+                  activeView === item.id
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <main className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
-          {activeView === 'ask' ? (
-            children
-          ) : (
-            <ComingSoonPanel item={NAV_ITEMS.find((item) => item.id === activeView) ?? NAV_ITEMS[0]} />
-          )}
+          {activeView === 'ask' && children}
+          {activeView === 'history' && <HistoryView />}
+          {activeView === 'sites' && <SitesView />}
+          {activeView === 'settings' && <SettingsView />}
         </main>
       </div>
 

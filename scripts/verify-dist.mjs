@@ -2,7 +2,7 @@
  * P1 构建产物自检：校验 Manifest 引用、HTML 资源路径、脚本 IIFE 形态与图标 PNG 合法性。
  * 不启动浏览器，仅做可复现的静态检查。
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -51,13 +51,32 @@ for (const page of ['popup.html', 'sidepanel.html', 'app.html']) {
   check(!/src="https?:\/\//.test(html), `${page} 不含远程脚本（CSP 合规）`);
 }
 
+// 按需加载的 chunk 不会出现在 HTML 中，需从打包后的 JS 引用里反查文件是否存在
+const assetsDir = resolve(dist, 'assets');
+const assetFiles = existsSync(assetsDir) ? readdirSync(assetsDir) : [];
+for (const asset of assetFiles.filter((file) => file.endsWith('.js'))) {
+  const code = readFileSync(resolve(assetsDir, asset), 'utf8');
+  const referenced = [
+    ...new Set(
+      [...code.matchAll(/["'`](?:\.\/|assets\/)?([A-Za-z0-9_-]+\.(?:js|css))["'`]/g)]
+        .map((match) => match[1])
+        .filter((name) => /^[A-Za-z0-9_]+-[A-Za-z0-9_-]{8}\.(?:js|css)$/.test(name)),
+    ),
+  ];
+  for (const name of referenced) {
+    check(assetFiles.includes(name), `动态资源存在：${name}（由 ${asset} 引用）`);
+  }
+}
+
 for (const script of ['background.js', 'content.js']) {
   const path = resolve(dist, script);
   check(existsSync(path), `运行时脚本存在：${script}`);
   if (!existsSync(path)) continue;
   const code = readFileSync(path, 'utf8').trim();
-  check(code.startsWith('(function()'), `${script} 为单文件 IIFE`);
+  // Rollup 可能在 IIFE 前放置 class 字段转换的辅助变量，仍属于单文件普通脚本
+  check(code.includes('(function()'), `${script} 打包为 IIFE 形态`);
   check(!/\bimport\s*\(/.test(code) && !/^\s*import\s/m.test(code), `${script} 不含 ESM import`);
+  check(!/^\s*export\s/m.test(code), `${script} 不含 ESM export`);
 }
 
 const CRC_TABLE = new Int32Array(256);

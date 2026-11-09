@@ -21,10 +21,11 @@ export const BUILTIN_SITES: SiteConfig[] = [
     timeoutMs: 120_000,
     custom: false,
     selectors: {
-      input: '#prompt-textarea, textarea',
-      sendButton: 'button[data-testid="send-button"]',
-      response: '[data-message-author-role="assistant"]',
-      streamingIndicator: 'button[data-testid="stop-button"]',
+      input: '#prompt-textarea, textarea, div[contenteditable="true"]',
+      sendButton: 'button[data-testid="send-button"], button[aria-label*="Send"], button[aria-label*="发送"]',
+      response:
+        '[data-message-author-role="assistant"] .markdown, [data-message-author-role="assistant"] [class*="markdown"], [data-message-author-role="assistant"], [data-testid*="assistant"] [class*="markdown"]',
+      streamingIndicator: 'button[data-testid="stop-button"], button[aria-label*="Stop"]',
     },
   },
   {
@@ -40,10 +41,11 @@ export const BUILTIN_SITES: SiteConfig[] = [
     timeoutMs: 120_000,
     custom: false,
     selectors: {
-      input: 'div[contenteditable="true"]',
-      sendButton: 'button[aria-label*="Send"], button[aria-label*="发送"]',
-      response: '[data-is-streaming] .font-claude-message, .font-claude-message',
-      streamingIndicator: 'button[aria-label*="Stop"]',
+      input: 'div[contenteditable="true"], textarea',
+      sendButton: 'button[aria-label*="Send"], button[aria-label*="发送"], button[data-testid*="send"]',
+      response:
+        '.font-claude-message, [class*="claude-message"], [data-is-streaming] [class*="markdown"], div.prose, [class*="prose"] [class*="markdown"], [data-testid*="message"] [class*="markdown"]',
+      streamingIndicator: 'button[aria-label*="Stop"], button[aria-label*="停止"], [data-is-streaming="true"]',
     },
   },
   {
@@ -79,8 +81,9 @@ export const BUILTIN_SITES: SiteConfig[] = [
     custom: false,
     selectors: {
       input: 'textarea, div[contenteditable="true"]',
-      sendButton: 'button[data-testid="chat_input_send_button"]',
-      response: '[data-testid="message_text_content"]',
+      sendButton: 'button[data-testid="chat_input_send_button"], button[aria-label*="发送"], button[data-testid*="send"]',
+      response:
+        '[data-testid="message_text_content"], [data-testid*="message_text"], [class*="message-content"], [class*="markdown-body"], [class*="markdown"]',
     },
   },
   {

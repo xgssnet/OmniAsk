@@ -4,6 +4,7 @@ import {
   mergeSelectorCandidates,
   normalizeSiteUrl,
   normalizeSites,
+  resolveNewChatUrl,
   siteOriginPattern,
   validateSite,
 } from './siteConfig';
@@ -36,6 +37,15 @@ describe('siteConfig', () => {
     expect(first.custom).toBe(true);
     expect(first.selectors.input).toContain('textarea');
     expect(first.selectors.response.length).toBeGreaterThan(0);
+  });
+
+  it('解析新会话地址：留空回退站点 URL，配置值优先', () => {
+    const site = createCustomSite({ name: 'A', url: 'a.test/chat' });
+    expect(resolveNewChatUrl(site)).toBe(site.url);
+    expect(resolveNewChatUrl({ ...site, newChatUrl: ' https://a.test/new ' })).toBe(
+      'https://a.test/new',
+    );
+    expect(resolveNewChatUrl({ ...site, newChatUrl: '   ' })).toBe(site.url);
   });
 
   it('合并候选选择器时保留用户值并去重', () => {

@@ -13,6 +13,10 @@ export interface ActiveTask {
   phase: TaskPhase;
   analysis?: AnalysisResult;
   error?: string;
+  /** 综合分析当前阶段说明，便于界面显示进度 */
+  analysisStage?: string;
+  /** SW 重启后自动补跑综合分析的次数，避免无限重试 */
+  analysisRetries?: number;
   /** 已打开的标签页，供取消与复用 */
   tabIds: number[];
 }
@@ -69,4 +73,22 @@ export function hasUsableAnswers(task: ActiveTask): boolean {
   return task.responses.some(
     (response) => response.status === 'completed' && response.content.trim().length > 0,
   );
+}
+
+export type AnalysisViewState =
+  | 'done'
+  | 'analyzing'
+  | 'failed'
+  | 'not-configured'
+  | 'no-answers'
+  | 'idle';
+
+/** 界面据此展示综合答案区的状态，避免把所有失败都显示成「暂无综合答案」。 */
+export function analysisViewState(task: ActiveTask, hasApiKey: boolean): AnalysisViewState {
+  if (task.analysis) return 'done';
+  if (task.phase === 'analyzing') return 'analyzing';
+  if (task.error) return 'failed';
+  if (!hasApiKey) return 'not-configured';
+  if (!hasUsableAnswers(task)) return 'no-answers';
+  return 'idle';
 }

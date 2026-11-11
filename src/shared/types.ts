@@ -22,6 +22,14 @@ export interface SiteConfig {
   id: string;
   name: string;
   url: string;
+  /** 新会话入口 URL；留空则使用 url（多数站点的首页即为新会话） */
+  newChatUrl?: string;
+  /** 可选的「新建对话」按钮 CSS 选择器：页面加载后先点击它再提问 */
+  newChatButton?: string;
+  /** 新建会话快捷键，例如 ctrl+o、ctrl+shift+k、ctrl+k、ctrl+j */
+  newChatShortcut?: string;
+  /** 「新建对话」按钮文案候选，用于按可见文字定位按钮 */
+  newChatButtonTexts?: string[];
   type: SiteType;
   /** 站点缩写或 emoji，用于 UI 头像 */
   icon: string;
@@ -151,6 +159,8 @@ export interface AppSettings {
   theme: ThemeMode;
   defaultSiteIds: string[];
   maxConcurrency: number;
+  /** 每次提问都会新建标签页，任务结束后是否自动关闭这些标签页 */
+  closeTabsAfterTask: boolean;
   autoAnalysis: boolean;
   onlineFactCheck: boolean;
   showDetailedAnalysis: boolean;

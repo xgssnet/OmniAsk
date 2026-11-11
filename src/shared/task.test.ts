@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { allSettled, createTask, hasUsableAnswers } from './task';
+import { allSettled, analysisViewState, createTask, hasUsableAnswers } from './task';
+import type { ActiveTask } from './task';
 import type { ModelResponse } from './types';
 
 describe('task', () => {
@@ -17,6 +18,29 @@ describe('task', () => {
     expect(allSettled(task)).toBe(false);
     task.responses[1] = { ...task.responses[1], status: 'failed' };
     expect(allSettled(task)).toBe(true);
+  });
+
+  it('综合答案区状态能区分各种「没有结果」的原因', () => {
+    const base = createTask('问题', ['a']);
+    base.responses = [
+      { siteId: 'a', status: 'completed', content: '有效回答', attempts: 1 },
+    ];
+
+    const withResult = {
+      ...base,
+      analysis: { finalAnswer: '综合答案' },
+    } as unknown as ActiveTask;
+    expect(analysisViewState(withResult, false)).toBe('done');
+
+    expect(analysisViewState({ ...base, phase: 'analyzing' }, true)).toBe('analyzing');
+    expect(analysisViewState({ ...base, phase: 'done', error: '综合分析失败：401' }, true)).toBe(
+      'failed',
+    );
+    expect(analysisViewState({ ...base, phase: 'done' }, false)).toBe('not-configured');
+
+    const noAnswers = { ...base, responses: [] as ModelResponse[], phase: 'done' } as ActiveTask;
+    expect(analysisViewState(noAnswers, true)).toBe('no-answers');
+    expect(analysisViewState({ ...base, phase: 'done' }, true)).toBe('idle');
   });
 
   it('部分失败不阻止综合分析', () => {

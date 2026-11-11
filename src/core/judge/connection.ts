@@ -7,6 +7,8 @@ export interface JudgeConnectionResult {
   status?: number;
   latencyMs: number;
   sample?: string;
+  /** 失败原因是缺少 API 域名的运行时主机权限 */
+  needsPermission?: boolean;
 }
 
 const TEST_TIMEOUT_MS = 20_000;
@@ -53,6 +55,7 @@ export async function testJudgeConnection(
   } catch (error) {
     return finish({
       ok: false,
+      needsPermission: true,
       detail: error instanceof Error ? error.message : String(error),
     });
   }

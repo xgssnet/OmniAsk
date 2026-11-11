@@ -22,7 +22,8 @@ import { ResponseCard } from '@/components/ResponseCard';
 import { useAppState } from '@/state/AppStateProvider';
 import { useTask } from '@/state/useTask';
 import { cn, copyToClipboard } from '@/lib/utils';
-import { openWorkspace } from '@/shared/messaging';
+import { openSettings, openWorkspace } from '@/shared/messaging';
+import { analysisViewState } from '@/shared/task';
 import { PREVIEW_ANALYSIS, PREVIEW_QUESTION, PREVIEW_RESPONSES, PREVIEW_SITE_IDS } from '@/shared/preview';
 import { VERIFICATION_LABELS, type ModelResponse, type SiteConfig } from '@/shared/types';
 
@@ -52,6 +53,7 @@ export function Workspace({ compact = false }: { compact?: boolean }) {
   const {
     ready,
     sites,
+    settings: appSettings,
     draft,
     setQuestion,
     setSelectedSiteIds,
@@ -143,6 +145,15 @@ export function Workspace({ compact = false }: { compact?: boolean }) {
   };
 
   const finalMarkdown = preview ? PREVIEW_ANALYSIS : (task.analysis?.finalAnswer ?? '');
+  const analysisState = analysisViewState(task, Boolean(appSettings.judge.apiKey.trim()));
+  const analysisHint =
+    analysisState === 'failed'
+      ? (task.error ?? '综合分析失败，原因未记录。')
+      : analysisState === 'not-configured'
+        ? '尚未配置裁决模型的 API Key。请到「设置 → 综合分析设置」填写 API Base URL / API Key / Model，并点击「测试连接」确认可用。'
+        : analysisState === 'no-answers'
+          ? '本次没有可用的模型回答，无法进行综合分析。请先确认各模型回答是否成功。'
+          : '本次未生成综合答案。可能是关闭了「自动开始综合分析」，或后台服务在汇总阶段被重启。各模型回答已保留，可直接重试分析，无需重新提问。';
   const copyFinal = async () => {
     if (!(await copyToClipboard(finalMarkdown))) return;
     setCopiedFinal(true);
@@ -373,17 +384,44 @@ export function Workspace({ compact = false }: { compact?: boolean }) {
               <CardContent>
                 {finalMarkdown ? (
                   <LazyMarkdownView content={finalMarkdown} />
-                ) : task.phase === 'analyzing' ? (
-                  <CardDescription className="leading-6">正在调用裁决模型进行综合分析…</CardDescription>
-                ) : live ? (
+                ) : !live ? (
                   <CardDescription className="leading-6">
-                    暂无综合答案。点击「重新分析」触发裁决；若提示失败，请先在设置中配置 API Key 并授予 API 域名访问权限。
-                  </CardDescription>
-                ) : (
-                  <CardDescription className="leading-6">
-                    P6 阶段已实现答案结构化、共同观点、冲突检测、事实核查与最终裁决。
+                    综合分析包含答案结构化、共同观点、冲突检测、事实核查与最终裁决。
                     无法验证的结论会明确标记，绝不以模型多数投票判定事实，也不会编造引用来源。
                   </CardDescription>
+                ) : analysisState === 'analyzing' ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-medium">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      {task.analysisStage ?? '正在调用裁决模型进行综合分析…'}
+                    </div>
+                    <CardDescription className="leading-6">
+                      裁决请求可能耗时数十秒；后台在此期间会保持存活，请勿关闭扩展。完成后会自动显示结果。
+                    </CardDescription>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div
+                      className={cn(
+                        'flex items-start gap-2 rounded-md border px-2.5 py-2 text-xs leading-6',
+                        analysisState === 'failed'
+                          ? 'border-destructive/30 bg-destructive/5 text-destructive'
+                          : 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-400',
+                      )}
+                    >
+                      <AlertCircle className="mt-1 h-3.5 w-3.5 shrink-0" />
+                      <span>{analysisHint}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Button variant="outline" size="sm" onClick={() => void analyze()}>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        {analysisState === 'failed' ? '重新分析' : '开始综合分析'}
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={openSettings}>
+                        前往设置
+                      </Button>
+                    </div>
+                  </div>
                 )}
 
                 {task.analysis && (

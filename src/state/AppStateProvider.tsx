@@ -7,7 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { normalizeSites } from '@/core/sites/siteConfig';
-import { DEFAULT_DRAFT, DEFAULT_SETTINGS, STORAGE_KEYS } from '@/shared/settings';
+import { DEFAULT_DRAFT, DEFAULT_SETTINGS, STORAGE_KEYS, normalizeSettings } from '@/shared/settings';
 import { BUILTIN_SITES } from '@/shared/sites';
 import { readStorage, writeStorage } from '@/shared/storage';
 import type { AppSettings, DraftState, SiteConfig } from '@/shared/types';
@@ -47,11 +47,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     ]).then(([savedSites, savedSettings, savedDraft]) => {
       if (!alive) return;
       setSites(normalizeSites(savedSites));
-      setSettings({
-        ...DEFAULT_SETTINGS,
-        ...savedSettings,
-        judge: { ...DEFAULT_SETTINGS.judge, ...savedSettings.judge },
-      });
+      setSettings(normalizeSettings(savedSettings));
       setDraft({ ...DEFAULT_DRAFT, ...savedDraft });
       setReady(true);
     });

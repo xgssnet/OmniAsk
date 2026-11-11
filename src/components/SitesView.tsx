@@ -267,6 +267,67 @@ export function SitesView() {
                       ))}
                     </div>
 
+                    <div className="grid gap-2 border-t pt-2 sm:grid-cols-2">
+                      <label className="block space-y-1">
+                        <span className="text-[10px] text-muted-foreground">新会话 URL（可选）</span>
+                        <input
+                          value={site.newChatUrl ?? ''}
+                          onChange={(event) =>
+                            updateSite(site.id, { newChatUrl: event.target.value })
+                          }
+                          placeholder={site.url}
+                          className={cn(inputClass, 'font-mono text-[10px]')}
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[10px] text-muted-foreground">
+                          「新建对话」按钮选择器（可选）
+                        </span>
+                        <input
+                          value={site.newChatButton ?? ''}
+                          onChange={(event) =>
+                            updateSite(site.id, { newChatButton: event.target.value })
+                          }
+                          placeholder='button[aria-label="新建对话"]'
+                          className={cn(inputClass, 'font-mono text-[10px]')}
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[10px] text-muted-foreground">
+                          新建会话快捷键（可选）
+                        </span>
+                        <input
+                          value={site.newChatShortcut ?? ''}
+                          onChange={(event) =>
+                            updateSite(site.id, { newChatShortcut: event.target.value })
+                          }
+                          placeholder="ctrl+o / ctrl+shift+k / ctrl+k / ctrl+j"
+                          className={cn(inputClass, 'font-mono text-[10px]')}
+                        />
+                      </label>
+                      <label className="block space-y-1">
+                        <span className="text-[10px] text-muted-foreground">
+                          「新建对话」按钮文案（逗号分隔）
+                        </span>
+                        <input
+                          value={(site.newChatButtonTexts ?? []).join(', ')}
+                          onChange={(event) =>
+                            updateSite(site.id, {
+                              newChatButtonTexts: event.target.value
+                                .split(',')
+                                .map((part) => part.trim())
+                                .filter(Boolean),
+                            })
+                          }
+                          placeholder="新聊天, 新建对话, New chat"
+                          className={cn(inputClass, 'font-mono text-[10px]')}
+                        />
+                      </label>
+                      <p className="text-[10px] leading-5 text-muted-foreground sm:col-span-2">
+                        插件优先复用浏览器中已打开的该站点页面，再按「按钮选择器 → 快捷键 → 按钮文案」在页面内新建会话；只有完全没有打开该站点时才会新建一个后台标签页。新会话 URL 用于首次打开，留空则用站点 URL。
+                      </p>
+                    </div>
+
                     <div className="flex flex-wrap items-center gap-3">
                       <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
                         <Switch

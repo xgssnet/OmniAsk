@@ -91,6 +91,16 @@ describe('testJudgeConnection', () => {
     expect(result.detail).toContain('没有可读取的回答内容');
   });
 
+  it('未授予 API 域名权限时标记 needsPermission 且不发请求', async () => {
+    vi.stubGlobal('chrome', { permissions: { contains: async () => false } });
+    const fetchMock = mockResponse(true, 200, '{}');
+    const result = await testJudgeConnection(config);
+    expect(result.ok).toBe(false);
+    expect(result.needsPermission).toBe(true);
+    expect(result.detail).toContain('授权');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('网络异常时给出可操作提示', async () => {
     vi.stubGlobal(
       'fetch',

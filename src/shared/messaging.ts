@@ -174,6 +174,19 @@ export async function pingServiceWorker(): Promise<PingResponse> {
   return response;
 }
 
+/** 打开设置页，便于在综合分析失败时快速补全 API 配置。 */
+export function openSettings(): void {
+  const url =
+    typeof chrome !== 'undefined' && chrome.runtime?.getURL
+      ? `${chrome.runtime.getURL('app.html')}?view=settings`
+      : '/app.html?view=settings';
+  if (typeof chrome !== 'undefined' && chrome.tabs?.create) {
+    void chrome.tabs.create({ url });
+    return;
+  }
+  globalThis.open(url, '_blank');
+}
+
 /** 打开完整问答工作台；非扩展环境下退化为打开本地页面。 */
 export function openWorkspace(): void {
   if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {

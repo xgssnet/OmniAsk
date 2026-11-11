@@ -9,12 +9,13 @@ export const STORAGE_KEYS = {
   draft: 'omniask:draft',
 } as const;
 
-export const APP_VERSION = '0.1.0';
+export const APP_VERSION = '0.1.1';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'system',
   defaultSiteIds: ['chatgpt', 'claude', 'deepseek'],
   maxConcurrency: 3,
+  closeTabsAfterTask: true,
   autoAnalysis: true,
   onlineFactCheck: false,
   showDetailedAnalysis: true,
@@ -28,6 +29,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   judgePrompt: JUDGE_SYSTEM_PROMPT,
 };
+
+/** 旧版本保存的设置缺少新增字段时补齐默认值，UI 与后台统一使用。 */
+export function normalizeSettings(saved: AppSettings): AppSettings {
+  const base = saved ?? DEFAULT_SETTINGS;
+  return {
+    ...DEFAULT_SETTINGS,
+    ...base,
+    judge: { ...DEFAULT_SETTINGS.judge, ...base.judge },
+  };
+}
 
 export const DEFAULT_DRAFT: DraftState = {
   question: '',

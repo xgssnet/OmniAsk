@@ -44,6 +44,11 @@ export function normalizeSiteUrl(input: string): string {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
+/** 每次提问使用的新会话地址；未单独配置时回退到站点首页。 */
+export function resolveNewChatUrl(site: SiteConfig): string {
+  return site.newChatUrl?.trim() || site.url;
+}
+
 /** 转成 Chrome 权限/内容脚本使用的 match pattern。 */
 export function siteOriginPattern(url: string): string {
   try {

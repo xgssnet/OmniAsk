@@ -1,15 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Download, Trash2, Upload } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, Copy, Download, Trash2, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LazyMarkdownView } from '@/components/LazyMarkdownView';
+import { clearRecords, deleteRecord, listRecords } from '@/core/history/HistoryStore';
 import {
-  clearRecords,
-  deleteRecord,
-  listRecords,
-} from '@/core/history/HistoryStore';
-import { downloadHistoryFile, importHistoryFile } from '@/core/history/historyFile';
+  downloadHistoryFile,
+  formatHistoryAnswers,
+  importHistoryFile,
+} from '@/core/history/historyFile';
+import { useAppState } from '@/state/AppStateProvider';
+import { copyToClipboard } from '@/lib/utils';
 import { TASK_STATUS_LABELS, type HistoryRecord } from '@/shared/types';
 
 function formatDate(timestamp: number): string {
@@ -17,10 +19,17 @@ function formatDate(timestamp: number): string {
 }
 
 export function HistoryView() {
+  const { sites } = useAppState();
+  const siteNames = useMemo(
+    () => Object.fromEntries(sites.map((site) => [site.id, site.name])),
+    [sites],
+  );
+
   const [records, setRecords] = useState<HistoryRecord[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -36,6 +45,45 @@ export function HistoryView() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const copy = useCallback(async (key: string, text: string, label: string) => {
+    if (!text.trim()) {
+      setMessage(`${label}：没有可复制的内容。`);
+      return;
+    }
+    const ok = await copyToClipboard(text);
+    if (!ok) {
+      setMessage(`${label}：复制失败，请检查浏览器剪贴板权限。`);
+      return;
+    }
+    setMessage('');
+    setCopiedKey(key);
+    setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 1500);
+  }, []);
+
+  const renderCopyButton = (
+    key: string,
+    label: string,
+    text: string,
+    disabled = false,
+    compact = false,
+  ) => {
+    const copied = copiedKey === key;
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        disabled={disabled}
+        className={compact ? 'h-6 px-1.5 text-[10px]' : ''}
+        aria-label={label}
+        title={label}
+        onClick={() => void copy(key, text, label)}
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? '已复制' : label}
+      </Button>
+    );
+  };
 
   const onExport = async () => {
     try {
@@ -103,14 +151,19 @@ export function HistoryView() {
       </div>
 
       {message && (
-        <div className="rounded-md border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground" role="status">
+        <div
+          className="rounded-md border bg-muted/40 px-3 py-2 text-[11px] text-muted-foreground"
+          role="status"
+        >
           {message}
         </div>
       )}
 
       {loading ? (
         <Card>
-          <CardContent className="py-8 text-center text-xs text-muted-foreground">正在读取本地记录…</CardContent>
+          <CardContent className="py-8 text-center text-xs text-muted-foreground">
+            正在读取本地记录…
+          </CardContent>
         </Card>
       ) : records.length === 0 ? (
         <Card className="border-dashed">
@@ -141,17 +194,25 @@ export function HistoryView() {
                       {record.analysis && <Badge variant="secondary">含综合答案</Badge>}
                     </div>
                   </button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-destructive"
-                    aria-label="删除记录"
-                    onClick={() => {
-                      void deleteRecord(record.id).then(refresh);
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {renderCopyButton(
+                      `all:${record.id}`,
+                      '复制全部',
+                      formatHistoryAnswers(record, siteNames),
+                      record.responses.length === 0,
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-destructive"
+                      aria-label="删除记录"
+                      onClick={() => {
+                        void deleteRecord(record.id).then(refresh);
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
                 </CardHeader>
 
                 {expanded && (
@@ -159,8 +220,19 @@ export function HistoryView() {
                     {record.responses.map((response) => (
                       <div key={response.siteId} className="rounded-md border p-2.5">
                         <div className="mb-1 flex items-center gap-2 text-[11px]">
-                          <span className="font-medium">{response.siteId}</span>
+                          <span className="font-medium">
+                            {siteNames[response.siteId] ?? response.siteId}
+                          </span>
                           <Badge variant="outline">{TASK_STATUS_LABELS[response.status]}</Badge>
+                          <span className="ml-auto">
+                            {renderCopyButton(
+                              `answer:${record.id}:${response.siteId}`,
+                              '复制',
+                              response.content,
+                              !response.content.trim(),
+                              true,
+                            )}
+                          </span>
                         </div>
                         {response.error ? (
                           <p className="text-[11px] text-destructive">{response.error}</p>
@@ -173,7 +245,18 @@ export function HistoryView() {
                     ))}
                     {record.analysis && (
                       <div className="rounded-md border border-primary/20 p-2.5">
-                        <div className="mb-1 text-[11px] font-medium">综合答案（裁决模型：{record.analysis.judgeModel}）</div>
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <div className="text-[11px] font-medium">
+                            综合答案（裁决模型：{record.analysis.judgeModel}）
+                          </div>
+                          {renderCopyButton(
+                            `analysis:${record.id}`,
+                            '复制综合答案',
+                            record.analysis.finalAnswer,
+                            !record.analysis.finalAnswer.trim(),
+                            true,
+                          )}
+                        </div>
                         <LazyMarkdownView content={record.analysis.finalAnswer} />
                       </div>
                     )}

@@ -1,4 +1,5 @@
 import type { ModelResponse, SiteConfig } from '@/shared/types';
+import { performNewChat } from './newChat';
 import {
   AdapterError,
   collectTextBlockCandidates,
@@ -72,8 +73,21 @@ export abstract class BaseAdapter {
     return this.site.selectors;
   }
 
-  protected async prepare(_ctx: AdapterContext): Promise<void> {
-    // 默认无需处理
+  /** 复用已打开页面时，先按站点配置在页面内新建空白会话，再提问。 */
+  protected async prepare(ctx: AdapterContext): Promise<void> {
+    const configured =
+      Boolean(this.site.newChatButton?.trim()) ||
+      Boolean(this.site.newChatShortcut?.trim()) ||
+      Boolean(this.site.newChatButtonTexts?.length);
+    if (!configured) return;
+
+    const result = performNewChat(this.site);
+    if (result.ok) {
+      console.debug(`[omniask] ${this.site.name} 新建会话：${result.method}`);
+      await sleep(700, ctx.signal);
+      return;
+    }
+    console.warn(`[omniask] ${this.site.name}：${result.method}，将在当前会话中继续提问。`);
   }
 
   /** 等待发送按钮由 disabled 变为可用，避免输入刚注入时点击落空。 */

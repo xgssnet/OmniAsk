@@ -1,6 +1,6 @@
 import { runAnalysis } from '@/core/judge/Judge';
 import { testJudgeConnection } from '@/core/judge/connection';
-import { normalizeSites } from '@/core/sites/siteConfig';
+import { normalizeSites, resolveNewChatUrl } from '@/core/sites/siteConfig';
 import { putRecord } from '@/core/history/HistoryStore';
 import { TaskQueue } from '@/core/queue/TaskQueue';
 import {
@@ -12,7 +12,7 @@ import {
   type TestSiteMessage,
   type TestSiteResponse,
 } from '@/shared/messaging';
-import { DEFAULT_SETTINGS, STORAGE_KEYS } from '@/shared/settings';
+import { DEFAULT_SETTINGS, STORAGE_KEYS, normalizeSettings } from '@/shared/settings';
 import { BUILTIN_SITES } from '@/shared/sites';
 import { readStorage, writeStorage } from '@/shared/storage';
 import {
@@ -48,6 +48,13 @@ async function getSites(): Promise<SiteConfig[]> {
   return normalizeSites(await readStorage<SiteConfig[]>(STORAGE_KEYS.sites, BUILTIN_SITES));
 }
 
+/** 补齐旧设置中缺失的新字段（例如 closeTabsAfterTask），避免后台读到 undefined。 */
+async function getSettings(): Promise<AppSettings> {
+  return normalizeSettings(
+    await readStorage<AppSettings>(STORAGE_KEYS.settings, DEFAULT_SETTINGS),
+  );
+}
+
 async function saveTask(task: ActiveTask): Promise<void> {
   task.updatedAt = Date.now();
   await writeStorage(STORAGE_KEYS.activeTask, task);
@@ -65,6 +72,7 @@ async function updateResponse(taskId: string, response: ModelResponse): Promise<
   await saveTask(task);
 }
 
+/** 只记录本插件新建的标签页；用户原有页面绝不加入清理列表。 */
 async function registerTab(taskId: string, tabId: number): Promise<void> {
   const task = await getTask();
   if (task.id !== taskId || task.tabIds.includes(tabId)) return;
@@ -97,33 +105,47 @@ async function waitForTabLoaded(tabId: number): Promise<void> {
   throw new Error('标签页加载超时，请检查网络或站点可访问性。');
 }
 
-async function openOrReuseTab(site: SiteConfig): Promise<number> {
-  let target: URL;
+interface TabTarget {
+  tabId: number;
+  /** 是否由本插件本次新建，决定任务结束后是否可被清理 */
+  created: boolean;
+}
+
+/**
+ * 优先复用浏览器中已打开的该站点页面；完全没有时才新建一个后台标签页。
+ * 复用时由内容脚本在页面内执行「新建会话」动作，不再额外开 tab。
+ */
+async function resolveTab(site: SiteConfig): Promise<TabTarget> {
+  const entryUrl = resolveNewChatUrl(site);
+  let origin = '';
   try {
-    target = new URL(site.url);
+    origin = new URL(entryUrl).origin;
   } catch {
-    throw new Error(`${site.name} 的 URL 无效：${site.url}`);
+    throw new Error(`${site.name} 的新会话地址无效：${entryUrl}`);
   }
 
+  const isUsable = (url: string) => !/\/login|\/signin|\/auth|\/passport/i.test(url);
   const tabs = await chrome.tabs.query({});
-  const preferred = site.url.replace(/\/$/, '');
+  const preferred = entryUrl.replace(/\/$/, '');
   const existing =
-    tabs.find((tab) => tab.id !== undefined && tab.url?.startsWith(preferred)) ??
+    tabs.find(
+      (tab) => tab.id !== undefined && tab.url?.startsWith(preferred) && isUsable(tab.url),
+    ) ??
     tabs.find((tab) => {
-      if (tab.id === undefined || !tab.url) return false;
+      if (tab.id === undefined || !tab.url || !isUsable(tab.url)) return false;
       try {
-        return new URL(tab.url).origin === target.origin;
+        return new URL(tab.url).origin === origin;
       } catch {
         return false;
       }
     });
 
-  if (existing?.id !== undefined) return existing.id;
+  if (existing?.id !== undefined) return { tabId: existing.id, created: false };
 
-  const tab = await chrome.tabs.create({ url: site.url, active: false });
+  const tab = await chrome.tabs.create({ url: entryUrl, active: false });
   if (tab.id === undefined) throw new Error(`无法为 ${site.name} 创建标签页`);
   await waitForTabLoaded(tab.id);
-  return tab.id;
+  return { tabId: tab.id, created: true };
 }
 
 /** 内置站点由 manifest 静态注入；自定义站点在运行时按需注入，失败时给出明确错误。 */
@@ -154,8 +176,8 @@ async function runSite(
   attempt: number,
   signal: AbortSignal,
 ): Promise<ModelResponse> {
-  const tabId = await openOrReuseTab(site);
-  await registerTab(taskId, tabId);
+  const { tabId, created } = await resolveTab(site);
+  if (created) await registerTab(taskId, tabId);
   await ensureContentScript(tabId);
 
   const finished = new Promise<ModelResponse>((resolve, reject) => {
@@ -231,15 +253,24 @@ async function analyze(taskId: string): Promise<void> {
     return;
   }
 
+  // 回答完成后内容脚本心跳已停止；分析阶段需自行保活，避免 SW 在等待 API 时被终止
+  const keepAlive = setInterval(() => {
+    void chrome.storage.local.get(STORAGE_KEYS.activeTask);
+  }, 8_000);
+
   task.phase = 'analyzing';
   task.error = undefined;
+  task.analysisStage = '正在准备各模型回答与裁决配置…';
   await saveTask(task);
 
   try {
-    const [settings, sites] = await Promise.all([
-      readStorage<AppSettings>(STORAGE_KEYS.settings, DEFAULT_SETTINGS),
-      getSites(),
-    ]);
+    const [settings, sites] = await Promise.all([getSettings(), getSites()]);
+    const staged = await getTask();
+    if (staged.id === taskId) {
+      staged.analysisStage = `正在请求裁决模型 ${settings.judge.model || '(未配置)'}…`;
+      await saveTask(staged);
+    }
+
     const siteNames = Object.fromEntries(sites.map((site) => [site.id, site.name]));
     const analysis = await runAnalysis({
       taskId,
@@ -253,15 +284,36 @@ async function analyze(taskId: string): Promise<void> {
     if (latest.id !== taskId) return;
     latest.analysis = analysis;
     latest.phase = 'done';
+    latest.error = undefined;
+    latest.analysisStage = undefined;
     await saveTask(latest);
     await saveHistory(latest, settings).catch(() => undefined);
   } catch (error) {
     const latest = await getTask();
     if (latest.id !== taskId) return;
     latest.phase = 'done';
+    latest.analysisStage = undefined;
     latest.error = `综合分析失败：${error instanceof Error ? error.message : String(error)}`;
     await saveTask(latest);
+  } finally {
+    clearInterval(keepAlive);
   }
+}
+
+/** 只关闭本次任务自己创建的后台标签页，绝不动用户原有页面。 */
+async function closeTaskTabs(taskId: string, close: boolean): Promise<void> {
+  if (!close) return;
+  const latest = await getTask();
+  if (latest.id !== taskId || latest.tabIds.length === 0) return;
+  for (const tabId of latest.tabIds) {
+    try {
+      await chrome.tabs.remove(tabId);
+    } catch {
+      // 用户可能已手动关闭该标签页
+    }
+  }
+  latest.tabIds = [];
+  await saveTask(latest);
 }
 
 async function finalize(taskId: string): Promise<void> {
@@ -271,10 +323,11 @@ async function finalize(taskId: string): Promise<void> {
   task.phase = 'done';
   await saveTask(task);
 
-  const settings = await readStorage<AppSettings>(STORAGE_KEYS.settings, DEFAULT_SETTINGS);
+  const settings = await getSettings();
   await saveHistory(task, settings, wasCancelled).catch((error: unknown) => {
     console.warn('[omniask] 保存历史失败：', error);
   });
+  await closeTaskTabs(taskId, settings.closeTabsAfterTask);
 
   if (!wasCancelled && settings.autoAnalysis && hasUsableAnswers(task)) {
     await analyze(taskId);
@@ -284,7 +337,7 @@ async function finalize(taskId: string): Promise<void> {
 async function startTask(question: string, siteIds: string[]): Promise<void> {
   await recovery;
   const [settings, sites] = await Promise.all([
-    readStorage<AppSettings>(STORAGE_KEYS.settings, DEFAULT_SETTINGS),
+    getSettings(),
     getSites(),
   ]);
   const selected = sites.filter((site) => siteIds.includes(site.id) && site.enabled);
@@ -370,7 +423,7 @@ async function retrySite(siteId: string): Promise<void> {
 async function handleTestSite(message: TestSiteMessage): Promise<TestSiteResponse> {
   const { site, kind } = message;
   try {
-    const tabId = await openOrReuseTab(site);
+    const { tabId } = await resolveTab(site);
     await ensureContentScript(tabId);
     const query =
       kind === 'login'
@@ -411,7 +464,27 @@ async function handleTestSite(message: TestSiteMessage): Promise<TestSiteRespons
 /** SW 可能被浏览器随时终止：把残留的运行中任务明确标记，而不是假装已完成。 */
 const recovery = (async () => {
   const task = await getTask();
-  if (task.phase !== 'running' && task.phase !== 'analyzing') return;
+
+  // 分析被中断时各模型回答仍然完好：自动补跑一次，而不是让用户重新提问
+  if (task.phase === 'analyzing') {
+    const retries = task.analysisRetries ?? 0;
+    if (retries < 1 && hasUsableAnswers(task)) {
+      task.analysisRetries = retries + 1;
+      task.error = undefined;
+      task.analysisStage = '后台服务曾在综合分析期间被终止，正在自动重试…';
+      await saveTask(task);
+      await analyze(task.id);
+      return;
+    }
+    task.phase = 'done';
+    task.analysisStage = undefined;
+    task.error =
+      '综合分析被后台服务中断且自动重试未完成。各模型回答已保留，请点击「重新分析」，无需重新提问。';
+    await saveTask(task);
+    return;
+  }
+
+  if (task.phase !== 'running') return;
   task.phase = 'done';
   task.error = '后台服务曾被浏览器终止，任务未完成。请重新提问。';
   task.responses = task.responses.map((response) =>
@@ -513,7 +586,14 @@ chrome.runtime.onMessage.addListener(
 
       case MESSAGE_TYPES.TEST_JUDGE:
         if (message.type === MESSAGE_TYPES.TEST_JUDGE) {
-          void testJudgeConnection(message.config)
+          const config = message.config;
+          if (!config) {
+            sendResponse({ ok: false, detail: '测试请求缺少 API 配置。', latencyMs: 0 });
+            return true;
+          }
+          // 用 Promise 链保证任何异常都会回响应，避免前台永久等待
+          void Promise.resolve()
+            .then(() => testJudgeConnection(config))
             .then(sendResponse)
             .catch((error: unknown) =>
               sendResponse({

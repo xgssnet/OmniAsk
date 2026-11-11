@@ -8,6 +8,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { useTheme } from '@/components/ThemeProvider';
 import { useAppState } from '@/state/AppStateProvider';
 import { requestJudgeOrigin } from '@/core/judge/permissions';
+import { testJudgeConnection } from '@/core/judge/connection';
+import { withTimeout } from '@/lib/timeout';
 import {
   MESSAGE_TYPES,
   sendToBackground,
@@ -58,6 +60,7 @@ export function SettingsView() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [message, setMessage] = useState('');
   const [judgeTesting, setJudgeTesting] = useState(false);
+  const [judgeStage, setJudgeStage] = useState('');
   const [judgeTest, setJudgeTest] = useState<TestJudgeResponse | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -81,24 +84,69 @@ export function SettingsView() {
       });
       return;
     }
+
+    const startedAt = Date.now();
     setJudgeTesting(true);
+    setJudgeStage('准备测试…');
     try {
-      // 必须在用户手势内发起权限请求；真实裁决由后台 fetch，测试走同一条路径
-      await requestJudgeOrigin(settings.judge.baseUrl);
-      const result = await sendToBackground<TestJudgeResponse>({
-        type: MESSAGE_TYPES.TEST_JUDGE,
-        config: settings.judge,
+      // 权限弹窗可能长时间不返回，最多等待 4 秒，之后继续由后台给出明确错误
+      setJudgeStage('检查 API 域名权限…');
+      try {
+        await withTimeout(requestJudgeOrigin(settings.judge.baseUrl), 4_000, '权限请求');
+      } catch (error) {
+        console.debug('[omniask] 权限请求未完成：', error);
+      }
+
+      // 优先走后台，与真实裁决调用路径一致
+      setJudgeStage('正在通过后台 Service Worker 测试…');
+      let result: TestJudgeResponse;
+      let usedFallback = false;
+      try {
+        result = await withTimeout(
+          sendToBackground<TestJudgeResponse>({
+            type: MESSAGE_TYPES.TEST_JUDGE,
+            config: settings.judge,
+          }),
+          8_000,
+          '后台响应',
+        );
+      } catch (error) {
+        console.debug('[omniask] 后台未响应，改用前台直接测试：', error);
+        usedFallback = true;
+        setJudgeStage('后台未响应，改用前台直接测试…');
+        result = await testJudgeConnection(settings.judge);
+      }
+
+      if (!result || typeof result.ok !== 'boolean') {
+        throw new Error('后台返回了无效结果，请在 chrome://extensions 重新加载扩展后重试。');
+      }
+
+      setJudgeTest({
+        ...result,
+        detail: usedFallback
+          ? `${result.detail}（后台未响应，已由前台完成测试；请在 chrome://extensions 点击「重新加载」以恢复完整后台路径）`
+          : result.detail,
       });
-      setJudgeTest(result);
     } catch (error) {
       setJudgeTest({
         ok: false,
         detail: error instanceof Error ? error.message : String(error),
-        latencyMs: 0,
+        latencyMs: Date.now() - startedAt,
       });
     } finally {
       setJudgeTesting(false);
+      setJudgeStage('');
     }
+  };
+
+  const onGrantAndRetry = async () => {
+    const granted = await requestJudgeOrigin(settings.judge.baseUrl);
+    setMessage(
+      granted
+        ? '已获得 API 域名权限，正在重新测试…'
+        : '权限未被授予，请在浏览器弹窗中选择「允许」后重试。',
+    );
+    if (granted) await onTestJudge();
   };
 
   const onExport = async () => {
@@ -185,6 +233,16 @@ export function SettingsView() {
             />
           </Row>
 
+          <Row
+            title="任务结束后自动关闭标签页"
+            description="只关闭本插件本次新建的后台标签页，绝不动你已打开的页面。关闭此开关可保留标签页供下次直接复用，也可在浏览器里核对原始页面。"
+          >
+            <Switch
+              checked={settings.closeTabsAfterTask}
+              onCheckedChange={(closeTabsAfterTask) => updateSettings({ closeTabsAfterTask })}
+              aria-label="任务结束后自动关闭标签页"
+            />
+          </Row>
           <Row title="自动开始综合分析" description="所有模型回答结束后自动调用裁决模型。">
             <Switch
               checked={settings.autoAnalysis}
@@ -347,28 +405,57 @@ export function SettingsView() {
           </CardContent>
         )}
 
-        {judgeTest && (
+        {(judgeTesting || judgeTest) && (
           <div
             className={cn(
               'mx-4 mb-4 rounded-md border px-3 py-2.5 text-[11px] leading-5',
-              judgeTest.ok
-                ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
-                : 'border-destructive/30 bg-destructive/5 text-destructive',
+              judgeTesting
+                ? 'border-primary/30 bg-primary/5 text-foreground'
+                : judgeTest?.ok
+                  ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400'
+                  : 'border-destructive/30 bg-destructive/5 text-destructive',
             )}
             role="status"
           >
-            <div className="font-medium">{judgeTest.ok ? '✓ 连接成功' : '✗ 连接失败'}</div>
-            <div>{judgeTest.detail}</div>
-            {judgeTest.status !== undefined && (
-              <div className="opacity-80">
-                HTTP {judgeTest.status} · 耗时 {judgeTest.latencyMs} ms
-              </div>
-            )}
-            {judgeTest.sample && <div className="opacity-80">模型返回：{judgeTest.sample}</div>}
-            {!judgeTest.ok && (
-              <div className="mt-1 opacity-80">
-                排查顺序：API Key → Base URL（通常需以 /v1 结尾）→ Model 名称 → 浏览器权限请求是否被允许 → 网络/代理。
-              </div>
+            {judgeTesting ? (
+              <>
+                <div className="flex items-center gap-1.5 font-medium">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  正在测试连接…
+                </div>
+                <div className="opacity-80">{judgeStage}</div>
+                <div className="mt-1 opacity-70">
+                  最长约 20 秒；若一直停留在此界面，请在 chrome://extensions 点击「重新加载」后重试。
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="font-medium">{judgeTest?.ok ? '✓ 连接成功' : '✗ 连接失败'}</div>
+                <div>{judgeTest?.detail}</div>
+                {judgeTest?.status !== undefined && (
+                  <div className="opacity-80">
+                    HTTP {judgeTest.status} · 耗时 {judgeTest.latencyMs} ms
+                  </div>
+                )}
+                {judgeTest?.sample && <div className="opacity-80">模型返回：{judgeTest.sample}</div>}
+                {!judgeTest?.ok && (
+                  <>
+                    <div className="mt-1 opacity-80">
+                      排查顺序：API Key → Base URL（通常需以 /v1 结尾）→ Model 名称 → 允许浏览器权限请求 → 网络/代理 → 在 chrome://extensions 重新加载扩展。
+                    </div>
+                    {judgeTest?.needsPermission && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-2"
+                        onClick={() => void onGrantAndRetry()}
+                      >
+                        授予权限并重试
+                      </Button>
+                    )}
+                  </>
+                )}
+              </>
             )}
           </div>
         )}
